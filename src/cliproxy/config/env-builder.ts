@@ -559,6 +559,17 @@ export function ensureProviderSettings(provider: CLIProxyProvider): void {
     }
   }
 
+  // Canonicalize provider-specific model aliases (e.g., AGY Sonnet 4.6 thinking legacy IDs).
+  for (const key of MODEL_ENV_VAR_KEYS) {
+    const current = mergedEnv[key];
+    if (typeof current !== 'string' || current.trim().length === 0) continue;
+    const canonical = normalizeModelIdForProvider(current, provider);
+    if (canonical !== current) {
+      mergedEnv[key] = canonical;
+      mutated = true;
+    }
+  }
+
   if (!mutated) {
     return;
   }
