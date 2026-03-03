@@ -253,6 +253,11 @@ export const CLIPROXY_AUTH_URL_PROVIDER_MAP: Record<CLIProxyProvider, string> = 
   (provider) => getCLIProxyAuthUrlProviderName(provider)
 );
 
+export function getManagementAuthUrlPath(provider: CLIProxyProvider): string {
+  const authUrlProvider = CLIPROXY_AUTH_URL_PROVIDER_MAP[provider] || provider;
+  return `/v0/management/${authUrlProvider}-auth-url?is_webui=true`;
+}
+
 /**
  * Get OAuth config for provider
  */

@@ -37,6 +37,7 @@ import {
   getOAuthConfig,
   ProviderOAuthConfig,
   CLIPROXY_CALLBACK_PROVIDER_MAP,
+  getManagementAuthUrlPath,
   normalizeKiroAuthMethod,
 } from './auth-types';
 import { isHeadlessEnvironment, killProcessOnPort, showStep } from './environment-detector';
@@ -275,12 +276,9 @@ async function handlePasteCallbackMode(
 
   try {
     // Request auth URL from CLIProxyAPI
-    // Note: Uses /oauth/${provider}/start endpoint (different from web-server routes which use
-    // /v0/management/${provider}-auth-url). Both start OAuth flows but this endpoint is simpler
-    // for CLI paste-callback mode as it directly returns the auth URL without is_webui param.
-    const startResponse = await fetch(buildProxyUrl(target, `/oauth/${provider}/start`), {
-      method: 'POST',
-      headers: buildManagementHeaders(target, { 'Content-Type': 'application/json' }),
+    // Use management auth-url endpoint to match CLIProxyAPI route contract.
+    const startResponse = await fetch(buildProxyUrl(target, getManagementAuthUrlPath(provider)), {
+      headers: buildManagementHeaders(target),
     });
 
     if (!startResponse.ok) {
