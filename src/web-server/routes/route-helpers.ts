@@ -10,6 +10,7 @@ import { getClaudeSettingsPath } from '../../utils/claude-config-path';
 import { resolveDroidProvider } from '../../targets/droid-provider';
 import { mapExternalProviderName } from '../../cliproxy/provider-capabilities';
 import {
+  canonicalizeModelIdForProvider,
   extractProviderFromPathname,
   getDeniedModelIdReasonForProvider,
 } from '../../cliproxy/model-id-normalizer';
@@ -39,6 +40,23 @@ function resolveProviderFromBaseUrl(baseUrl: unknown): CLIProxyProvider | null {
   }
 }
 
+function resolveProviderForModelCanonicalization(
+  baseUrl: unknown,
+  providerHint: unknown
+): CLIProxyProvider | null {
+  const fromBaseUrl = resolveProviderFromBaseUrl(baseUrl);
+  if (fromBaseUrl) {
+    return fromBaseUrl;
+  }
+  if (typeof providerHint === 'string' && providerHint.trim().length > 0) {
+    const fromProviderHint = mapExternalProviderName(providerHint);
+    if (fromProviderHint) {
+      return fromProviderHint;
+    }
+  }
+  return null;
+}
+
 function getDeniedModelReasonForProvider(
   provider: CLIProxyProvider | null,
   values: Array<string | undefined>
@@ -50,6 +68,15 @@ function getDeniedModelReasonForProvider(
     if (deniedReason) return deniedReason;
   }
   return null;
+}
+
+function canonicalizeModelForProvider(
+  provider: CLIProxyProvider | null,
+  value: string | undefined
+): string | undefined {
+  if (typeof value !== 'string') return value;
+  if (!provider || value.trim().length === 0) return value;
+  return canonicalizeModelIdForProvider(value, provider);
 }
 
 /**
@@ -104,12 +131,28 @@ export function createSettingsFile(
 ): string {
   const settingsPath = path.join(getCcsDir(), `${name}.settings.json`);
   const { model, opusModel, sonnetModel, haikuModel } = models;
-  const providerFromBaseUrl = resolveProviderFromBaseUrl(baseUrl);
-  const deniedReason = getDeniedModelReasonForProvider(providerFromBaseUrl, [
-    model,
-    opusModel,
-    sonnetModel,
-    haikuModel,
+  const providerForModelCanonicalization = resolveProviderForModelCanonicalization(
+    baseUrl,
+    provider
+  );
+  const canonicalModel = canonicalizeModelForProvider(providerForModelCanonicalization, model);
+  const canonicalOpusModel = canonicalizeModelForProvider(
+    providerForModelCanonicalization,
+    opusModel
+  );
+  const canonicalSonnetModel = canonicalizeModelForProvider(
+    providerForModelCanonicalization,
+    sonnetModel
+  );
+  const canonicalHaikuModel = canonicalizeModelForProvider(
+    providerForModelCanonicalization,
+    haikuModel
+  );
+  const deniedReason = getDeniedModelReasonForProvider(providerForModelCanonicalization, [
+    canonicalModel,
+    canonicalOpusModel,
+    canonicalSonnetModel,
+    canonicalHaikuModel,
   ]);
   if (deniedReason) {
     throw new Error(deniedReason);
@@ -117,21 +160,22 @@ export function createSettingsFile(
   const droidProvider = resolveDroidProvider({
     provider,
     baseUrl,
-    model,
+    model: canonicalModel,
   });
 
   const settings: Settings = {
     env: {
       ANTHROPIC_BASE_URL: baseUrl,
       ANTHROPIC_AUTH_TOKEN: apiKey,
-      ...(model && { ANTHROPIC_MODEL: model }),
-      ...(opusModel && { ANTHROPIC_DEFAULT_OPUS_MODEL: opusModel }),
-      ...(sonnetModel && { ANTHROPIC_DEFAULT_SONNET_MODEL: sonnetModel }),
-      ...(haikuModel && { ANTHROPIC_DEFAULT_HAIKU_MODEL: haikuModel }),
+      ...(canonicalModel && { ANTHROPIC_MODEL: canonicalModel }),
+      ...(canonicalOpusModel && { ANTHROPIC_DEFAULT_OPUS_MODEL: canonicalOpusModel }),
+      ...(canonicalSonnetModel && { ANTHROPIC_DEFAULT_SONNET_MODEL: canonicalSonnetModel }),
+      ...(canonicalHaikuModel && { ANTHROPIC_DEFAULT_HAIKU_MODEL: canonicalHaikuModel }),
       CCS_DROID_PROVIDER: droidProvider,
     },
   };
 
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   return `~/.ccs/${name}.settings.json`;
 }
@@ -159,18 +203,37 @@ export function updateSettingsFile(
 
   const settings = loadSettings(settingsPath);
   const providerForValidation =
-    resolveProviderFromBaseUrl(updates.baseUrl) ??
-    resolveProviderFromBaseUrl(settings.env?.ANTHROPIC_BASE_URL);
-  const deniedReason = getDeniedModelReasonForProvider(providerForValidation, [
-    updates.model !== undefined ? updates.model : settings.env?.ANTHROPIC_MODEL,
+    resolveProviderForModelCanonicalization(updates.baseUrl, updates.provider) ??
+    resolveProviderForModelCanonicalization(
+      settings.env?.ANTHROPIC_BASE_URL,
+      updates.provider ?? settings.env?.CCS_DROID_PROVIDER
+    );
+  const canonicalModel =
+    updates.model !== undefined
+      ? canonicalizeModelForProvider(providerForValidation, updates.model)
+      : undefined;
+  const canonicalOpusModel =
     updates.opusModel !== undefined
-      ? updates.opusModel
-      : settings.env?.ANTHROPIC_DEFAULT_OPUS_MODEL,
+      ? canonicalizeModelForProvider(providerForValidation, updates.opusModel)
+      : undefined;
+  const canonicalSonnetModel =
     updates.sonnetModel !== undefined
-      ? updates.sonnetModel
-      : settings.env?.ANTHROPIC_DEFAULT_SONNET_MODEL,
+      ? canonicalizeModelForProvider(providerForValidation, updates.sonnetModel)
+      : undefined;
+  const canonicalHaikuModel =
     updates.haikuModel !== undefined
-      ? updates.haikuModel
+      ? canonicalizeModelForProvider(providerForValidation, updates.haikuModel)
+      : undefined;
+  const deniedReason = getDeniedModelReasonForProvider(providerForValidation, [
+    canonicalModel !== undefined ? canonicalModel : settings.env?.ANTHROPIC_MODEL,
+    canonicalOpusModel !== undefined
+      ? canonicalOpusModel
+      : settings.env?.ANTHROPIC_DEFAULT_OPUS_MODEL,
+    canonicalSonnetModel !== undefined
+      ? canonicalSonnetModel
+      : settings.env?.ANTHROPIC_DEFAULT_SONNET_MODEL,
+    canonicalHaikuModel !== undefined
+      ? canonicalHaikuModel
       : settings.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL,
   ]);
   if (deniedReason) {
@@ -189,8 +252,8 @@ export function updateSettingsFile(
 
   if (updates.model !== undefined) {
     settings.env = settings.env || {};
-    if (updates.model) {
-      settings.env.ANTHROPIC_MODEL = updates.model;
+    if (canonicalModel) {
+      settings.env.ANTHROPIC_MODEL = canonicalModel;
     } else {
       delete settings.env.ANTHROPIC_MODEL;
     }
@@ -199,8 +262,8 @@ export function updateSettingsFile(
   // Handle model mapping fields
   if (updates.opusModel !== undefined) {
     settings.env = settings.env || {};
-    if (updates.opusModel) {
-      settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL = updates.opusModel;
+    if (canonicalOpusModel) {
+      settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL = canonicalOpusModel;
     } else {
       delete settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
     }
@@ -208,8 +271,8 @@ export function updateSettingsFile(
 
   if (updates.sonnetModel !== undefined) {
     settings.env = settings.env || {};
-    if (updates.sonnetModel) {
-      settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL = updates.sonnetModel;
+    if (canonicalSonnetModel) {
+      settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL = canonicalSonnetModel;
     } else {
       delete settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
     }
@@ -217,8 +280,8 @@ export function updateSettingsFile(
 
   if (updates.haikuModel !== undefined) {
     settings.env = settings.env || {};
-    if (updates.haikuModel) {
-      settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = updates.haikuModel;
+    if (canonicalHaikuModel) {
+      settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = canonicalHaikuModel;
     } else {
       delete settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
     }
@@ -234,7 +297,7 @@ export function updateSettingsFile(
     const resolvedProvider = resolveDroidProvider({
       provider: updates.provider ?? settings.env.CCS_DROID_PROVIDER,
       baseUrl: updates.baseUrl ?? settings.env.ANTHROPIC_BASE_URL,
-      model: updates.model ?? settings.env.ANTHROPIC_MODEL,
+      model: canonicalModel ?? settings.env.ANTHROPIC_MODEL,
     });
     settings.env.CCS_DROID_PROVIDER = resolvedProvider;
   }
