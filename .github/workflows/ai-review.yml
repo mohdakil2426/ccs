@@ -185,11 +185,20 @@ jobs:
       - name: Load review prompt
         id: review-prompt
         run: |
-          PROMPT_CONTENT=$(cat .github/review-prompt.md)
+          PROMPT_FILE=".github/review-prompt.md"
+          if [ ! -f "$PROMPT_FILE" ]; then
+            echo "::warning::review-prompt.md not found — using fallback prompt"
+            PROMPT_FILE=""
+          fi
+          DELIMITER="REVIEW_PROMPT_$(openssl rand -hex 16)"
           {
-            echo "content<<REVIEW_PROMPT_EOF"
-            echo "$PROMPT_CONTENT"
-            echo "REVIEW_PROMPT_EOF"
+            echo "content<<${DELIMITER}"
+            if [ -n "$PROMPT_FILE" ]; then
+              cat "$PROMPT_FILE"
+            else
+              echo "Perform a thorough code review. Flag security issues, logic errors, and missing error handling. Follow the repository CLAUDE.md for project-specific guidelines."
+            fi
+            echo "${DELIMITER}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Run Claude Code Review

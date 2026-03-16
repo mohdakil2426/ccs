@@ -99,6 +99,10 @@ These are project-specific constraints from CLAUDE.md. Violations are automatic 
 - **Settings format** — all env values in settings MUST be strings (not booleans/objects) to prevent PowerShell crashes
 - **Conventional commit** — PR title must follow conventional commit format
 - **Non-invasive** — code must NOT modify `~/.claude/settings.json` without explicit user confirmation
+- **TTY-aware colors** — respect `NO_COLOR` env var; detect TTY before using colors
+- **Idempotent installs** — all install/setup operations must be safe to run multiple times
+- **Dashboard parity** — configuration features MUST have both CLI and Dashboard interfaces
+- **Documentation mandatory** — CLI/config changes require `--help` update AND docs update (local `docs/` or CCS docs submodule)
 
 ## Informational Checks (Non-Blocking But Report)
 
@@ -124,7 +128,7 @@ These are project-specific constraints from CLAUDE.md. Violations are automatic 
 ## Suppressions — DO NOT Flag These
 
 - Style/formatting issues (linter handles this)
-- "Consider using X instead of Y" when Y works correctly
+- "Consider using X instead of Y" when Y works correctly AND the suggestion has no security, correctness, or CCS-compliance implications
 - Redundancy that aids readability
 - Issues already addressed in the diff being reviewed (read the FULL diff first)
 - "Add a comment explaining why" suggestions — comments rot, code should be self-documenting
@@ -141,7 +145,7 @@ Use visual hierarchy with emojis and `---` separators between major sections:
 ### 🔍 Findings
 Group by severity. Each finding must include `file:line` reference and concrete explanation.
 
-**🔴 Critical** (must fix before merge):
+**🔴 High** (must fix before merge):
 - Security vulnerabilities, data corruption risks, breaking changes without migration
 
 **🟡 Medium** (should fix before merge):
@@ -172,18 +176,18 @@ Brief acknowledgment of good patterns (2-3 items max, only if genuinely notewort
 Use ONE of the following. The criteria are strict:
 
 **✅ APPROVED** — ONLY when ALL of these are true:
-- Zero 🔴 Critical findings
+- Zero 🔴 High findings
 - Zero 🟡 Medium findings with security implications
 - All CCS-specific constraints respected
 - Tests exist for new behavior (if applicable)
 
 **⚠️ APPROVED WITH NOTES** — when:
-- Zero 🔴 Critical findings
+- Zero 🔴 High findings
 - Only non-security 🟡 Medium or 🟢 Low findings remain
 - Findings are documented (not ignored)
 
 **❌ CHANGES REQUESTED** — when ANY of these:
-- Any 🔴 Critical finding exists
+- Any 🔴 High finding exists (security, data corruption, breaking changes)
 - Any security-relevant 🟡 Medium finding exists
 - Missing tests for new behavior that changes user-facing functionality
 - Breaking change without documentation
